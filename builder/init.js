@@ -35,6 +35,7 @@ const setLocalData = async () => {
 const setRemoteData = async () => {
   try {
     let res = await axios.get(picPath, {
+      console.log("PIC URL:", picPath);
       responseType: "arraybuffer",
     });
     const pic = res.data;
