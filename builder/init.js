@@ -20,7 +20,6 @@ if (!process.env.PIC) {
 const picPath = process.env.PIC;
 const msgPath = process.env.SCROLL_MSG;
 
-// Download a URL without Axios or environment proxy settings
 const downloadUrl = (url, redirects = 5) =>
   new Promise((resolve, reject) => {
     let parsed;
@@ -51,10 +50,7 @@ const downloadUrl = (url, redirects = 5) =>
         const status = response.statusCode || 0;
         const location = response.headers.location;
 
-        if (
-          [301, 302, 303, 307, 308].includes(status) &&
-          location
-        ) {
+        if ([301, 302, 303, 307, 308].includes(status) && location) {
           response.resume();
 
           if (redirects <= 0) {
@@ -62,9 +58,7 @@ const downloadUrl = (url, redirects = 5) =>
             return;
           }
 
-          resolve(
-            downloadUrl(new URL(location, parsed).href, redirects - 1)
-          );
+          resolve(downloadUrl(new URL(location, parsed).href, redirects - 1));
           return;
         }
 
@@ -75,7 +69,6 @@ const downloadUrl = (url, redirects = 5) =>
         }
 
         const chunks = [];
-
         response.on("data", (chunk) => chunks.push(chunk));
         response.on("end", () => resolve(Buffer.concat(chunks)));
         response.on("error", reject);
@@ -89,28 +82,31 @@ const downloadUrl = (url, redirects = 5) =>
     request.on("error", reject);
   });
 
-// Local initialization
+const escapeHtml = (text) =>
+  text.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+
 const setLocalData = async () => {
-  try {
-    const pic = path.join(__dirname, "../local/", picPath);
-    let markup = "";
+  const pic = path.join(__dirname, "../local/", picPath);
+  let markup = "";
 
-    if (msgPath) {
-      const text = fs.readFileSync(
-        path.join(__dirname, "../local/", msgPath),
-        "utf-8"
-      );
-      markup = generateMarkupLocal(text);
-    }
-
-    await setPic(pic);
-    genIndex(markup);
-  } catch (e) {
-    throw new Error(e.message);
+  if (msgPath) {
+    const text = fs.readFileSync(
+      path.join(__dirname, "../local/", msgPath),
+      "utf-8"
+    );
+    markup = generateMarkupLocal(text);
   }
+
+  await setPic(pic);
+  genIndex(markup);
 };
 
-// Remote initialization
 const setRemoteData = async () => {
   try {
     console.log("Downloading image from:", new URL(picPath).hostname);
@@ -119,30 +115,32 @@ const setRemoteData = async () => {
     let markup = "";
 
     if (msgPath) {
-      const html = (await downloadUrl(msgPath)).toString("utf-8");
-      const paras = [];
-      const re = /<p>([\s\S]*?)<\/p>/g;
-      let m;
+      let text;
 
-      while ((m = re.exec(html))) {
-        paras.push(m[1].replace(/<[^>]+>/g, "").trim());
+      if (/^https?:\/\//i.test(msgPath)) {
+        text = (await downloadUrl(msgPath)).toString("utf-8");
+
+        const paras = [];
+        const re = /<p>([\s\S]*?)<\/p>/gi;
+        let match;
+
+        while ((match = re.exec(text))) {
+          const para = match[1].replace(/<[^>]*>/g, "").trim();
+          if (para) paras.push(para);
+        }
+
+        markup = paras
+          .map((para) => `<p>${escapeHtml(para)}</p>`)
+          .join(" ");
+      } else {
+        // Plain text supplied directly through Vercel Environment Variables
+        markup = msgPath
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => `<p>${escapeHtml(line)}</p>`)
+          .join(" ");
       }
-
-      markup = paras
-        .filter(Boolean)
-        .map(
-          (para) =>
-            `<p>${para
-              .replace(/&#(\d+);/g, (_, c) =>
-                String.fromCharCode(+c)
-              )
-              .replace(/&amp;/g, "&")
-              .replace(/&quot;/g, '"')
-              .replace(/&#39;/g, "'")
-              .replace(/&lt;/g, "<")
-              .replace(/&gt;/g, ">")}</p> `
-        )
-        .join("");
     }
 
     await setPic(pic);
