@@ -1,3 +1,4 @@
+
 const axios = require("axios").default;
 const path = require("path");
 const fs = require("fs");
@@ -13,17 +14,20 @@ if (!process.env.PIC) throw new Error("Please specify PIC in environment.");
 const picPath = process.env.PIC;
 const msgPath = process.env.SCROLL_MSG;
 
-//Local initialization
+// Local initialization
 const setLocalData = async () => {
   try {
     const pic = path.join(__dirname, "../local/", picPath);
     let markup = "";
+
     if (msgPath) {
-      const text = fs.readFileSync(path.join(__dirname, "../local/", msgPath), {
-        encoding: "utf-8",
-      });
+      const text = fs.readFileSync(
+        path.join(__dirname, "../local/", msgPath),
+        { encoding: "utf-8" }
+      );
       markup = generateMarkupLocal(text);
     }
+
     await setPic(pic);
     genIndex(markup);
   } catch (e) {
@@ -31,24 +35,29 @@ const setLocalData = async () => {
   }
 };
 
-//Remote initialization
+// Remote initialization
 const setRemoteData = async () => {
   try {
+    console.log("PIC URL:", picPath);
+
     let res = await axios.get(picPath, {
-      console.log("PIC URL:", picPath);
       responseType: "arraybuffer",
     });
+
     const pic = res.data;
     let markup = "";
+
     if (msgPath) {
       res = await axios.get(msgPath);
       const html = res.data;
       const paras = [];
       const re = /<p>([\s\S]*?)<\/p>/g;
       let m;
+
       while ((m = re.exec(html))) {
         paras.push(m[1].replace(/<[^>]+>/g, "").trim());
       }
+
       markup = paras
         .filter(Boolean)
         .map(
@@ -63,6 +72,7 @@ const setRemoteData = async () => {
         )
         .join("");
     }
+
     await setPic(pic);
     genIndex(markup);
   } catch (e) {
