@@ -8,8 +8,13 @@ const { generateMarkupLocal } = require("./generateMarkup");
 
 require("dotenv").config();
 
-if (!process.env.NAME) throw new Error("Please specify NAME in environment.");
-if (!process.env.PIC) throw new Error("Please specify PIC in environment.");
+if (!process.env.NAME) {
+  throw new Error("Please specify NAME in environment.");
+}
+
+if (!process.env.PIC) {
+  throw new Error("Please specify PIC in environment.");
+}
 
 const picPath = process.env.PIC;
 const msgPath = process.env.SCROLL_MSG;
@@ -25,6 +30,7 @@ const setLocalData = async () => {
         path.join(__dirname, "../local/", msgPath),
         { encoding: "utf-8" }
       );
+
       markup = generateMarkupLocal(text);
     }
 
@@ -38,20 +44,23 @@ const setLocalData = async () => {
 // Remote initialization
 const setRemoteData = async () => {
   try {
-try {
-  console.log("PIC hostname:", new URL(picPath).hostname);
-} catch {
-  console.log("PIC is not a valid URL");
-}
+    console.log("PIC hostname:", new URL(picPath).hostname);
+
     let res = await axios.get(picPath, {
       responseType: "arraybuffer",
+      proxy: false,
+      timeout: 20000,
     });
 
     const pic = res.data;
     let markup = "";
 
     if (msgPath) {
-      res = await axios.get(msgPath);
+      res = await axios.get(msgPath, {
+        proxy: false,
+        timeout: 20000,
+      });
+
       const html = res.data;
       const paras = [];
       const re = /<p>([\s\S]*?)<\/p>/g;
@@ -66,7 +75,9 @@ try {
         .map(
           (para) =>
             `<p>${para
-              .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(+c))
+              .replace(/&#(\d+);/g, (_, c) =>
+                String.fromCharCode(+c)
+              )
               .replace(/&amp;/g, "&")
               .replace(/&quot;/g, '"')
               .replace(/&#39;/g, "'")
@@ -79,10 +90,15 @@ try {
     await setPic(pic);
     genIndex(markup);
   } catch (e) {
+    console.error("Remote initialization failed:", e.message);
     throw new Error(e.message);
   }
 };
 
-if (process.argv[2] === "--local") setLocalData();
-else if (process.argv[2] === "--remote") setRemoteData();
-else console.log("Fetch mode not specified.");
+if (process.argv[2] === "--local") {
+  setLocalData();
+} else if (process.argv[2] === "--remote") {
+  setRemoteData();
+} else {
+  console.log("Fetch mode not specified.");
+}
