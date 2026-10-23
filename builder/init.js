@@ -38,8 +38,11 @@ const setLocalData = async () => {
 // Remote initialization
 const setRemoteData = async () => {
   try {
-    console.log("PIC URL:", picPath);
-
+try {
+  console.log("PIC hostname:", new URL(picPath).hostname);
+} catch {
+  console.log("PIC is not a valid URL");
+}
     let res = await axios.get(picPath, {
       responseType: "arraybuffer",
     });
