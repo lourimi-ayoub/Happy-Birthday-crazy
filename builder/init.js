@@ -1,5 +1,6 @@
 
-const axios = require("axios").default;
+const https = require("https");
+const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const setPic = require("./getPic");
@@ -19,6 +20,75 @@ if (!process.env.PIC) {
 const picPath = process.env.PIC;
 const msgPath = process.env.SCROLL_MSG;
 
+// Download a URL without Axios or environment proxy settings
+const downloadUrl = (url, redirects = 5) =>
+  new Promise((resolve, reject) => {
+    let parsed;
+
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error("Invalid URL: " + url));
+      return;
+    }
+
+    const client =
+      parsed.protocol === "https:"
+        ? https
+        : parsed.protocol === "http:"
+        ? http
+        : null;
+
+    if (!client) {
+      reject(new Error("Unsupported URL protocol: " + parsed.protocol));
+      return;
+    }
+
+    const request = client.get(
+      parsed,
+      { headers: { "User-Agent": "Happy-Birthday-Card/1.0" } },
+      (response) => {
+        const status = response.statusCode || 0;
+        const location = response.headers.location;
+
+        if (
+          [301, 302, 303, 307, 308].includes(status) &&
+          location
+        ) {
+          response.resume();
+
+          if (redirects <= 0) {
+            reject(new Error("Too many redirects downloading " + url));
+            return;
+          }
+
+          resolve(
+            downloadUrl(new URL(location, parsed).href, redirects - 1)
+          );
+          return;
+        }
+
+        if (status < 200 || status >= 300) {
+          response.resume();
+          reject(new Error("Download failed with HTTP " + status));
+          return;
+        }
+
+        const chunks = [];
+
+        response.on("data", (chunk) => chunks.push(chunk));
+        response.on("end", () => resolve(Buffer.concat(chunks)));
+        response.on("error", reject);
+      }
+    );
+
+    request.setTimeout(20000, () => {
+      request.destroy(new Error("Download timed out: " + url));
+    });
+
+    request.on("error", reject);
+  });
+
 // Local initialization
 const setLocalData = async () => {
   try {
@@ -28,9 +98,8 @@ const setLocalData = async () => {
     if (msgPath) {
       const text = fs.readFileSync(
         path.join(__dirname, "../local/", msgPath),
-        { encoding: "utf-8" }
+        "utf-8"
       );
-
       markup = generateMarkupLocal(text);
     }
 
@@ -44,24 +113,13 @@ const setLocalData = async () => {
 // Remote initialization
 const setRemoteData = async () => {
   try {
-    console.log("PIC hostname:", new URL(picPath).hostname);
+    console.log("Downloading image from:", new URL(picPath).hostname);
+    const pic = await downloadUrl(picPath);
 
-    let res = await axios.get(picPath, {
-      responseType: "arraybuffer",
-      proxy: false,
-      timeout: 20000,
-    });
-
-    const pic = res.data;
     let markup = "";
 
     if (msgPath) {
-      res = await axios.get(msgPath, {
-        proxy: false,
-        timeout: 20000,
-      });
-
-      const html = res.data;
+      const html = (await downloadUrl(msgPath)).toString("utf-8");
       const paras = [];
       const re = /<p>([\s\S]*?)<\/p>/g;
       let m;
@@ -89,16 +147,23 @@ const setRemoteData = async () => {
 
     await setPic(pic);
     genIndex(markup);
+    console.log("Remote initialization completed.");
   } catch (e) {
     console.error("Remote initialization failed:", e.message);
-    throw new Error(e.message);
+    throw e;
   }
 };
 
 if (process.argv[2] === "--local") {
-  setLocalData();
+  setLocalData().catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
 } else if (process.argv[2] === "--remote") {
-  setRemoteData();
+  setRemoteData().catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
 } else {
   console.log("Fetch mode not specified.");
 }
